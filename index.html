@@ -1,0 +1,393 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>02.06 - Create terrain from heightmap</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chroma-js/2.4.2/chroma.min.js"></script>
+    <!-- Compiled and minified CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/css/materialize.min.css">
+    <!-- Compiled and minified JavaScript -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+        }
+
+        #controls {
+            background-color: whitesmoke;
+            position: fixed;
+            width: 140px;
+            height: 240px;
+            padding: 16px;
+            top: 24px;
+            right: 24px;
+        }
+    </style>
+</head>
+<body>
+    <div id="container"></div>
+    <div id="controls">
+        Point Count
+        <input id="pointcount" type="range" min="1" max="25000" value="15000">
+        Max Ridge Length
+        <input id="ridgelen" type="range" min="1" max="100" value="50">
+        Max Distance
+        <input id="maxdistance" type="range" min="1" max="100" value="10">
+        Peaks
+        <input id="peaks" type="range" min="1" max="1000" value="50">
+        Max Height
+        <input id="maxheight" type="range" min="1" max="50" value="10">
+        Blend
+        <input id="blend" type="range" min="1" max="10" value="10">
+    </div>
+</body>
+
+<script type="module">
+    //import * as THREE from 'three';
+    import Delaunator from 'https://cdn.skypack.dev/delaunator@5.0.0';
+    import {OrbitControls} from 'https://cdn.jsdelivr.net/npm/three@0.121.1/examples/jsm/controls/OrbitControls.js';
+    import {Node} from './node.js'
+
+    let container;
+    let camera, scene, renderer;
+    let landscapeMesh;
+
+    // Landscape parameters
+    let landscapePointCount;
+    let landscapeMaxDistance;
+    let landscapeRidgeLength; 
+    let landscapePeaksCount; 
+    let landscapeMaxHeight; 
+    let landscapeBlend; 
+
+    // Add listeners for controls changing
+    const inputs = document.querySelectorAll('input');
+    inputs.forEach((input) => {
+        input.addEventListener('change', updateLandscapeParameters);
+    });
+
+    function updateLandscapeParameters(e) {
+        landscapePointCount = document.querySelector("#pointcount").value;
+        landscapeRidgeLength = document.querySelector("#ridgelen").value;
+        landscapeMaxDistance = document.querySelector("#maxdistance").value;
+        landscapePeaksCount = document.querySelector("#peaks").value;
+        landscapeMaxHeight = document.querySelector("#maxheight").value / 10; // Sliders don't seem to work with floats?
+        landscapeBlend = document.querySelector("#blend").value / 10;
+
+        // Clean up and remove the old landscape mesh
+        if (landscapeMesh != undefined) {
+            const o = scene.getObjectByProperty('uuid', landscapeMesh.uuid);
+
+            if (o != undefined) {
+                o.geometry.dispose();
+                o.material.dispose();
+                scene.remove(o);
+            } 
+        }
+
+        landscapeMesh = generateLandscape();
+        scene.add(landscapeMesh);
+    }
+
+    init();
+    updateLandscapeParameters(null);
+
+    animate();
+
+    function init() {
+
+        container = document.getElementById( 'container' );
+
+        //
+
+        camera = new THREE.PerspectiveCamera( 27, window.innerWidth / window.innerHeight, 1, 3500 );
+        camera.position.z = 2750;
+        
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color( 0x05051515 );
+        //scene.fog = new THREE.Fog( 0x050505, 2000, 3500 );
+
+        //
+
+        scene.add( new THREE.AmbientLight( 0x444444 ) );
+
+        const light1 = new THREE.DirectionalLight( 0xffffff, 0.5 );
+        light1.position.set( 1, 1, 1 );
+        scene.add( light1 );
+
+        const light2 = new THREE.DirectionalLight( 0xffffff, 1.5 );
+        light2.position.set( 0, - 1, 0 );
+        scene.add( light2 );
+
+        renderer = new THREE.WebGLRenderer();
+        renderer.setPixelRatio( window.devicePixelRatio );
+        renderer.setSize( window.innerWidth, window.innerHeight );
+        renderer.outputEncoding = THREE.sRGBEncoding;
+
+        const controls = new OrbitControls( camera, renderer.domElement );
+        camera.position.set( 0, 10, 10 );
+        controls.update();
+
+        container.appendChild( renderer.domElement );
+
+        //
+
+        window.addEventListener( 'resize', onWindowResize );
+
+    }
+
+    function generateLandscape() {
+       // Delaunay triangulation
+        var coords = [];
+        var nodes = []
+        for (let i = 0; i < landscapePointCount; i++) {
+            var x = Math.random() * 10 - 5;
+            var y = Math.random() * 10 - 5; 
+
+            coords.push(x, y);
+
+            nodes.push(new Node(i, x, y));
+        }
+
+        const delaunay = new Delaunator(coords);
+
+        // Connect nodes to each other
+        for (let i = 0; i < delaunay.triangles.length; i += 3) {
+            for (let j = 0; j < 3; j += 1) {
+                let p = delaunay.triangles[i + j];
+
+                for (let k = 0; k < 3; k += 1) {
+                    let neighbor = delaunay.triangles[i + k];
+
+                    if (neighbor == p) {
+                        continue;
+                    }
+                    
+                    nodes[p].addNeighbors(nodes[neighbor]);
+                }
+            }
+        }
+        
+        /*
+        // Centers each node. Can lead to weirdness around edges.
+        nodes.forEach((node) => {
+            node.center();
+        });
+        */
+
+        // Height functions
+        // Ideally these are plug-and-playable.
+        function calculateHeight(troughInversion, originHeight, maxDistance, distance) {
+            return (troughInversion - troughInversion * distance / maxDistance) * originHeight;
+        }
+
+        for ( let i = 0; i < landscapePeaksCount; i++ ) {
+            let origin = nodes[Math.floor(Math.random() * nodes.length)];
+
+            let maxDistance = Math.floor(Math.random() * landscapeMaxDistance) + 1;
+            let ridgeLength = Math.floor(Math.random() * landscapeRidgeLength) + 2;
+
+            let originHeight = 0.5 + (Math.random() * landscapeMaxHeight - 0.5);
+            if (Math.random() > 0.7) {
+                originHeight = 0.1;
+            }
+
+            // -1 if we want to invert the ridge (for example, sea troughs)
+            let troughInversion = 1;
+            if (Math.random() > 1.0) {
+                troughInversion = -1;
+            }
+
+            let q = [];
+            q.push(origin)
+            let distances = {};
+            distances[origin.id] = 0;
+
+            // Add unique nodes to the ridgeline
+            let node = [...origin.neighbors][Math.floor(Math.random() * origin.neighbors.size)];
+            let seen = new Set();
+            for (let j = 0; j < ridgeLength; j++ ) {
+                q.push(node);
+
+                distances[node.id] = 0;
+                seen.add(node);
+
+                let options = [];
+                for (let neighbor of node.neighbors) {
+                    if (seen.has(neighbor)) {
+                        continue;
+                    }
+
+                    options.push(neighbor);
+                }
+
+                if (options.length == 0) {
+                    break;
+                }
+
+                node = options[Math.floor(Math.random() * options.length)];
+
+                // Could also look at the angle between the node we come from, this node, and the neighbors,
+                //to find the arm with the greatest angle
+            }
+
+            let blend = Math.random() < landscapeBlend;
+
+            while (q.length > 0) {
+                let node = q.shift();
+                let distance = distances[node.id];
+
+                if (distance > maxDistance) {
+                    continue;
+                }
+
+                let newHeight = calculateHeight(troughInversion, originHeight, maxDistance, distance);
+
+                blend = Math.random() < landscapeBlend;
+                if (blend) {
+                    //node.height = (node.height + newHeight) / 2; 
+                    node.height = newHeight;
+                } else if (newHeight > node.height) {
+                    node.height = newHeight;
+                }
+
+                for (let neighbor of node.neighbors) {
+                    if (neighbor.id in distances) {
+                        continue;
+                    }
+
+                    distances[neighbor.id] = distance + 1;
+                    q.push(neighbor);
+                }
+            }
+        }
+
+        const geometry = new THREE.BufferGeometry();
+
+        const positions = [];
+        const normals = [];
+        const colors = [];
+
+        const color = new THREE.Color();
+
+        const pA = new THREE.Vector3();
+        const pB = new THREE.Vector3();
+        const pC = new THREE.Vector3();
+
+        const cb = new THREE.Vector3();
+        const ab = new THREE.Vector3();
+
+        for ( let i = 0; i < delaunay.triangles.length; i += 3 ) {
+
+            let coordsIdx
+
+            // positions
+            coordsIdx = delaunay.triangles[i] * 2;
+            let nodeA = nodes[coordsIdx / 2];
+
+            positions.push( nodeA.x, nodeA.height, nodeA.y );
+            pA.set( nodeA.x, nodeA.height, nodeA.y );
+
+            coordsIdx = delaunay.triangles[i + 1] * 2;
+            let nodeB = nodes[coordsIdx / 2];
+
+            positions.push( nodeB.x, nodeB.height, nodeB.y );
+            pB.set( nodeB.x, nodeB.height, nodeB.y );
+
+            coordsIdx = delaunay.triangles[i + 2] * 2;
+            let nodeC = nodes[coordsIdx / 2];
+
+            positions.push( nodeC.x, nodeC.height, nodeC.y );
+            pC.set( nodeC.x, nodeC.height, nodeC.y );
+
+            // flat face normals
+
+            cb.subVectors( pC, pB );
+            ab.subVectors( pA, pB );
+            cb.cross( ab );
+
+            cb.normalize();
+
+            const nx = cb.x;
+            const ny = cb.y;
+            const nz = cb.z;
+
+            normals.push( nx, ny, nz );
+            normals.push( nx, ny, nz );
+            normals.push( nx, ny, nz );
+
+            // colors
+
+            for (let node of [nodeA, nodeB, nodeC]) {
+                let vx = Math.random() * 0.5;  //1.0;  //( pC[0] / n ) + 0.5;
+                let vy = Math.random() * 0.5;  //1.0;  //( pC[1] / n ) + 0.5;
+                let vz = Math.random() * 0.5;  //1.0;  //( pC[2] / n ) + 0.5;
+
+                if ( 0 < node.height && node.height < 0.15 ) {
+                    vx = 0.2;
+                    vy = 0.8;
+                    vz = 0.2;
+                } else if (node.height < 0.05) {
+                    vx = 0.2;
+                    vy = 0.2;
+                    vz = 0.8;
+                } else {
+                    vx = 0.0 + node.height / landscapeMaxHeight;
+                    vy = 0.0 + node.height / landscapeMaxHeight;
+                    vz = 0.0 + node.height / landscapeMaxHeight;
+                }
+
+                color.setRGB( vx, vy, vz );
+
+                const alpha = 0.9; //Math.random();
+
+                colors.push( color.r, color.g, color.b, alpha );
+            }
+        }
+
+        function disposeArray() {
+            this.array = null;
+        }
+
+        geometry.setAttribute( 'position', new THREE.Float32BufferAttribute( positions, 3 ).onUpload( disposeArray ) );
+        geometry.setAttribute( 'normal', new THREE.Float32BufferAttribute( normals, 3 ).onUpload( disposeArray ) );
+        geometry.setAttribute( 'color', new THREE.Float32BufferAttribute( colors, 4 ).onUpload( disposeArray ) );
+
+        geometry.computeBoundingSphere();
+
+        const material = new THREE.MeshPhongMaterial( {
+            color: 0xaaaaaa, specular: 0xffffff, shininess: 250,
+            side: THREE.DoubleSide, vertexColors: true, transparent: true
+        } );
+
+        return new THREE.Mesh( geometry, material );
+    }
+
+    function onWindowResize() {
+
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+
+        renderer.setSize( window.innerWidth, window.innerHeight );
+
+    }
+
+    function animate() {
+        requestAnimationFrame( animate );
+        render();
+    }
+
+    function render() {
+
+        const time = Date.now() * 0.001;
+
+        landscapeMesh.rotation.y = time * 0.15;
+        //mesh.rotation.y = time * 0.2;
+
+        renderer.render( scene, camera );
+
+    }
+</script>
+</html>
