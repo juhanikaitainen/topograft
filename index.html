@@ -41,6 +41,7 @@
         <input id="maxheight" type="range" min="1" max="50" value="10">
         Blend
         <input id="blend" type="range" min="1" max="10" value="10">
+        <button id="regenerate" type="button">Regenerate</button>
     </div>
 </body>
 
@@ -67,6 +68,11 @@
     inputs.forEach((input) => {
         input.addEventListener('change', updateLandscapeParameters);
     });
+
+    const regenerateButton = document.querySelector('#regenerate');
+    if (regenerateButton != undefined) {
+        regenerateButton.addEventListener('click', updateLandscapeParameters);
+    }
 
     function updateLandscapeParameters(e) {
         landscapePointCount = document.querySelector("#pointcount").value;
@@ -380,7 +386,7 @@
 
         const time = Date.now() * 0.001;
 
-        landscapeMesh.rotation.y = time * 0.15;
+        //landscapeMesh.rotation.y = time * 0.15;
         //mesh.rotation.y = time * 0.2;
 
         renderer.render( scene, camera );
