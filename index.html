@@ -2,7 +2,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>02.06 - Create terrain from heightmap</title>
+    <title>Terrain Generator</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chroma-js/2.4.2/chroma.min.js"></script>
     <!-- Compiled and minified CSS -->
@@ -30,7 +30,7 @@
     <div id="container"></div>
     <div id="controls">
         Point Count
-        <input id="pointcount" type="range" min="1" max="25000" value="15000">
+        <input id="pointcount" type="range" min="500" max="25000" value="15000">
         Max Ridge Length
         <input id="ridgelen" type="range" min="1" max="100" value="50">
         Max Distance
@@ -186,7 +186,7 @@
         for ( let i = 0; i < landscapePeaksCount; i++ ) {
             let origin = nodes[Math.floor(Math.random() * nodes.length)];
 
-            let maxDistance = Math.floor(Math.random() * landscapeMaxDistance) + 1;
+            let maxDistance = Math.floor(Math.random() * landscapeMaxDistance + landscapePointCount / 5000);
             let ridgeLength = Math.floor(Math.random() * landscapeRidgeLength) + 2;
 
             let originHeight = 0.5 + (Math.random() * landscapeMaxHeight - 0.5);
@@ -246,10 +246,7 @@
                 let newHeight = calculateHeight(troughInversion, originHeight, maxDistance, distance);
 
                 blend = Math.random() < landscapeBlend;
-                if (blend) {
-                    //node.height = (node.height + newHeight) / 2; 
-                    node.height = newHeight;
-                } else if (newHeight > node.height) {
+                if (!blend || newHeight > node.height) {
                     node.height = newHeight;
                 }
 
@@ -326,9 +323,9 @@
                 let vz = Math.random() * 0.5;  //1.0;  //( pC[2] / n ) + 0.5;
 
                 if ( 0 < node.height && node.height < 0.15 ) {
-                    vx = 0.2;
-                    vy = 0.8;
-                    vz = 0.2;
+                    vx = 0.1 + Math.random() * 0.1;
+                    vy = 0.6 + Math.random() * 0.3;
+                    vz = 0.1 + Math.random() * 0.2;
                 } else if (node.height < 0.05) {
                     vx = 0.2;
                     vy = 0.2;
