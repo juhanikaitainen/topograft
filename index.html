@@ -18,8 +18,8 @@
         #controls {
             background-color: whitesmoke;
             position: fixed;
-            width: 140px;
-            height: 240px;
+            width: 240px;
+            #height: 240px;
             padding: 16px;
             top: 24px;
             right: 24px;
@@ -41,7 +41,15 @@
         <input id="maxheight" type="range" min="1" max="50" value="10">
         Blend
         <input id="blend" type="range" min="1" max="10" value="10">
-        <button id="regenerate" type="button">Regenerate</button>
+        <br>
+        <div>
+            <label>
+                <input id="smooth" name="smooth" type="checkbox" checked>
+                <span>Smooth</span>
+            </label>
+        </div>
+        <br />
+        <a id="regenerate" class="waves-effect waves-light btn-small">Regenerate</a>
     </div>
 </body>
 
@@ -61,7 +69,8 @@
     let landscapeRidgeLength; 
     let landscapePeaksCount; 
     let landscapeMaxHeight; 
-    let landscapeBlend; 
+    let landscapeBlend;
+    let landscapeSmooth;
 
     // Add listeners for controls changing
     const inputs = document.querySelectorAll('input');
@@ -81,6 +90,7 @@
         landscapePeaksCount = document.querySelector("#peaks").value;
         landscapeMaxHeight = document.querySelector("#maxheight").value / 10; // Sliders don't seem to work with floats?
         landscapeBlend = document.querySelector("#blend").value / 10;
+        landscapeSmooth = document.querySelector("#smooth").value; 
 
         // Clean up and remove the old landscape mesh
         if (landscapeMesh != undefined) {
@@ -176,12 +186,12 @@
             }
         }
         
-        /*
         // Centers each node. Can lead to weirdness around edges.
-        nodes.forEach((node) => {
-            node.center();
-        });
-        */
+        if (landscapeSmooth) {
+            nodes.forEach((node) => {
+                node.center();
+            });
+        }
 
         // Height functions
         // Ideally these are plug-and-playable.
