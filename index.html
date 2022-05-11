@@ -5,6 +5,7 @@
     <title>Terrain Generator</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chroma-js/2.4.2/chroma.min.js"></script>
+    <script src="gif.js"></script>
     <!-- Compiled and minified CSS -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/css/materialize.min.css">
     <!-- Compiled and minified JavaScript -->
@@ -19,7 +20,6 @@
             background-color: whitesmoke;
             position: fixed;
             width: 240px;
-            #height: 240px;
             padding: 16px;
             top: 24px;
             right: 24px;
@@ -27,7 +27,9 @@
     </style>
 </head>
 <body>
-    <div id="container"></div>
+    <div id="container">
+        <canvas id="canvas"></canvas>
+    </div>
     <div id="controls">
         Point Count
         <input id="pointcount" type="range" min="500" max="25000" value="15000">
@@ -50,18 +52,19 @@
         </div>
         <br />
         <a id="regenerate" class="waves-effect waves-light btn-small">Regenerate</a>
+        <a id="generategif" class="waves-effect waves-light btn-small">Download GIF</a>
     </div>
 </body>
 
 <script type="module">
-    //import * as THREE from 'three';
     import Delaunator from 'https://cdn.skypack.dev/delaunator@5.0.0';
     import {OrbitControls} from 'https://cdn.jsdelivr.net/npm/three@0.121.1/examples/jsm/controls/OrbitControls.js';
-    import {Node} from './node.js'
+    import {Node} from './node.js';
 
-    let container;
+    let container, canvas;
     let camera, scene, renderer;
     let landscapeMesh;
+    let gifRendering = false;
 
     // Landscape parameters
     let landscapePointCount;
@@ -82,6 +85,55 @@
     if (regenerateButton != undefined) {
         regenerateButton.addEventListener('click', updateLandscapeParameters);
     }
+
+    // Add listener for generating gif
+    const generateGifButton = document.querySelector('#generategif');
+    generateGifButton.addEventListener('click', function () {
+        gifRendering = true;
+
+        generateGifButton.disabled = true;
+        const oldGenerateGifButtonText = generateGifButton.textContent;
+        generateGifButton.textContent = 'Rendering...'
+
+        let gif = new GIF({
+            workers: 32,
+            debug: true,
+            quality: 30,
+            transparent: 0x111111,
+        });
+
+        const gifCanvas = document.createElement('canvas');
+        gifCanvas.width = 512; //canvas.width;
+        gifCanvas.height = 512 * canvas.height / canvas.width;
+        const context = gifCanvas.getContext('2d');
+
+        console.log(gifCanvas.width, gifCanvas.height);
+
+        // Generate
+        for (let i = 0.0; i <= 1.0; i += 0.01) {
+            render(i);
+            context.drawImage(canvas, 0, 0, gifCanvas.width, gifCanvas.height);
+            gif.addFrame(gifCanvas, {copy: true, delay: 100});
+        }
+        
+        // Once we've written out all the frames, we can resume normal rendering
+        gifRendering = false;
+
+        // When finished, automatically download the gif
+        gif.on('finished', function(blob) {
+            const link = document.createElement( 'a' );
+            link.href = URL.createObjectURL( blob );
+            link.download = 'animation.gif';
+            link.dispatchEvent( new MouseEvent( 'click' ) );
+
+            // Reset the rendering flag as well as the button to export
+            generateGifButton.disabled = false;
+            generateGifButton.textContent = oldGenerateGifButtonText;
+        });
+
+        // Begin rendering through the workers
+        gif.render()
+    });
 
     function updateLandscapeParameters(e) {
         landscapePointCount = document.querySelector("#pointcount").value;
@@ -109,24 +161,18 @@
 
     init();
     updateLandscapeParameters(null);
-
-    animate();
+    requestAnimationFrame(animate);
 
     function init() {
-
         container = document.getElementById( 'container' );
 
-        //
-
         camera = new THREE.PerspectiveCamera( 27, window.innerWidth / window.innerHeight, 1, 3500 );
-        camera.position.z = 2750;
         
         scene = new THREE.Scene();
-        scene.background = new THREE.Color( 0x05051515 );
+        scene.background = new THREE.Color( 0x111111 );
         //scene.fog = new THREE.Fog( 0x050505, 2000, 3500 );
 
-        //
-
+        // Lighting
         scene.add( new THREE.AmbientLight( 0x444444 ) );
 
         const light1 = new THREE.DirectionalLight( 0xffffff, 0.5 );
@@ -137,21 +183,17 @@
         light2.position.set( 0, - 1, 0 );
         scene.add( light2 );
 
-        renderer = new THREE.WebGLRenderer();
+        canvas = document.getElementById('canvas');
+        renderer = new THREE.WebGLRenderer({canvas: canvas});
         renderer.setPixelRatio( window.devicePixelRatio );
         renderer.setSize( window.innerWidth, window.innerHeight );
         renderer.outputEncoding = THREE.sRGBEncoding;
 
         const controls = new OrbitControls( camera, renderer.domElement );
-        camera.position.set( 0, 10, 10 );
+        camera.position.set( 10, 6, 10 );
         controls.update();
 
-        container.appendChild( renderer.domElement );
-
-        //
-
         window.addEventListener( 'resize', onWindowResize );
-
     }
 
     function generateLandscape() {
@@ -294,7 +336,7 @@
 
         for ( let i = 0; i < delaunay.triangles.length; i += 3 ) {
 
-            let coordsIdx
+            let coordsIdx;
 
             // positions
             coordsIdx = delaunay.triangles[i] * 2;
@@ -334,9 +376,7 @@
             // colors
 
             for (let node of [nodeA, nodeB, nodeC]) {
-                let vx = Math.random() * 0.5;  //1.0;  //( pC[0] / n ) + 0.5;
-                let vy = Math.random() * 0.5;  //1.0;  //( pC[1] / n ) + 0.5;
-                let vz = Math.random() * 0.5;  //1.0;  //( pC[2] / n ) + 0.5;
+                let vx, vy, vz;
 
                 if ( 0 < node.height && node.height < 0.15 ) {
                     vx = 0.1 + Math.random() * 0.1;
@@ -387,20 +427,20 @@
 
     }
 
-    function animate() {
+    function animate(time) {
+        // Only render if we're not rendering out a GIF already
+        if (!gifRendering) {
+            // 20000 is the number of milliseconds required to do a full rotation
+            render( (time / 20000) % 1 );
+        }
+
         requestAnimationFrame( animate );
-        render();
     }
 
-    function render() {
-
-        const time = Date.now() * 0.001;
-
-        //landscapeMesh.rotation.y = time * 0.15;
-        //mesh.rotation.y = time * 0.2;
-
+    // Progress goes from 0 to 1 
+    function render(progress) {
+        landscapeMesh.rotation.y = progress * Math.PI * 2;
         renderer.render( scene, camera );
-
     }
 </script>
 </html>
