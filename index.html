@@ -6,10 +6,10 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chroma-js/2.4.2/chroma.min.js"></script>
     <script src="gif.js"></script>
-    <!-- Compiled and minified CSS -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/css/materialize.min.css">
-    <!-- Compiled and minified JavaScript -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
+    <!--<script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>-->
+    <script src="//cdnjs.cloudflare.com/ajax/libs/seedrandom/3.0.5/seedrandom.min.js">
+</script>
     <style>
         body {
             margin: 0;
@@ -32,9 +32,10 @@
     </div>
     <div id="controls">
         Point Count
-        <input id="pointcount" type="range" min="500" max="25000" value="15000">
+        <input id="pointcount" type="range" min="500" max="250000" value="15000">
+        <h5>Ridges</h5>
         Max Ridge Length
-        <input id="ridgelen" type="range" min="1" max="100" value="50">
+        <input id="ridgelen" type="range" min="1" max="500" value="50">
         Max Distance
         <input id="maxdistance" type="range" min="1" max="100" value="10">
         Peaks
@@ -49,6 +50,11 @@
                 <input id="smooth" name="smooth" type="checkbox" checked>
                 <span>Smooth</span>
             </label>
+            <br />
+            <label>
+                <input id="rainfall" name="rainfall" type="checkbox">
+                <span>Rainfall</span>
+            </label>
         </div>
         <br />
         <a id="regenerate" class="waves-effect waves-light btn-small">Regenerate</a>
@@ -60,6 +66,7 @@
     import Delaunator from 'https://cdn.skypack.dev/delaunator@5.0.0';
     import {OrbitControls} from 'https://cdn.jsdelivr.net/npm/three@0.121.1/examples/jsm/controls/OrbitControls.js';
     import {Node} from './node.js';
+    import {calculateRainfall} from './rainfall.js';
 
     let container, canvas;
     let camera, scene, renderer;
@@ -67,13 +74,16 @@
     let gifRendering = false;
 
     // Landscape parameters
+    let seed = "josh";
     let landscapePointCount;
     let landscapeMaxDistance;
     let landscapeRidgeLength; 
+    let landscapeRidgeAngleMax = true;
     let landscapePeaksCount; 
     let landscapeMaxHeight; 
     let landscapeBlend;
     let landscapeSmooth;
+    let landscapeRainfall;
 
     // Add listeners for controls changing
     const inputs = document.querySelectorAll('input');
@@ -83,7 +93,10 @@
 
     const regenerateButton = document.querySelector('#regenerate');
     if (regenerateButton != undefined) {
-        regenerateButton.addEventListener('click', updateLandscapeParameters);
+        regenerateButton.addEventListener('click', () => {
+            seed = Date.now().toString();
+            updateLandscapeParameters(null);
+        });
     }
 
     // Add listener for generating gif
@@ -106,8 +119,6 @@
         gifCanvas.width = 512; //canvas.width;
         gifCanvas.height = 512 * canvas.height / canvas.width;
         const context = gifCanvas.getContext('2d');
-
-        console.log(gifCanvas.width, gifCanvas.height);
 
         // Generate
         for (let i = 0.0; i <= 1.0; i += 0.01) {
@@ -142,7 +153,11 @@
         landscapePeaksCount = document.querySelector("#peaks").value;
         landscapeMaxHeight = document.querySelector("#maxheight").value / 10; // Sliders don't seem to work with floats?
         landscapeBlend = document.querySelector("#blend").value / 10;
-        landscapeSmooth = document.querySelector("#smooth").value; 
+        landscapeSmooth = document.querySelector("#smooth").checked; 
+        landscapeRainfall = document.querySelector("#rainfall").checked; 
+
+        // Consistent seeding :D
+        Math.seedrandom(seed);
 
         // Clean up and remove the old landscape mesh
         if (landscapeMesh != undefined) {
@@ -175,13 +190,24 @@
         // Lighting
         scene.add( new THREE.AmbientLight( 0x444444 ) );
 
-        const light1 = new THREE.DirectionalLight( 0xffffff, 0.5 );
-        light1.position.set( 1, 1, 1 );
+        let position = [0, 50, -100];
+
+        const light1 = new THREE.DirectionalLight( 0xFDFBD3, 1.0);
+        //light1.castShadow = true;
+        light1.position.set(...position);
         scene.add( light1 );
+
+        /*
+        const sphereGeometry = new THREE.SphereGeometry( 1, 32, 16 );
+        const sphereMaterial = new THREE.MeshBasicMaterial({color: 0xFFFFFF});
+        const sphereMesh = new THREE.Mesh(sphereGeometry, sphereMaterial);
+        sphereMesh.position.set(...position);
+        scene.add(sphereMesh);
 
         const light2 = new THREE.DirectionalLight( 0xffffff, 1.5 );
         light2.position.set( 0, - 1, 0 );
         scene.add( light2 );
+        */
 
         canvas = document.getElementById('canvas');
         renderer = new THREE.WebGLRenderer({canvas: canvas});
@@ -200,9 +226,11 @@
        // Delaunay triangulation
         var coords = [];
         var nodes = []
+        
+        // Create points on a 20x20 grid
         for (let i = 0; i < landscapePointCount; i++) {
-            var x = Math.random() * 10 - 5;
-            var y = Math.random() * 10 - 5; 
+            var x = Math.random() * 20 - 10;
+            var y = Math.random() * 20 - 10; 
 
             coords.push(x, y);
 
@@ -238,13 +266,18 @@
         // Height functions
         // Ideally these are plug-and-playable.
         function calculateHeight(troughInversion, originHeight, maxDistance, distance) {
-            return (troughInversion - troughInversion * distance / maxDistance) * originHeight;
+            return (troughInversion - troughInversion * distance / maxDistance) * originHeight * (0.9 + Math.random() * 0.1);
         }
 
         for ( let i = 0; i < landscapePeaksCount; i++ ) {
             let origin = nodes[Math.floor(Math.random() * nodes.length)];
 
-            let maxDistance = Math.floor(Math.random() * landscapeMaxDistance + landscapePointCount / 5000);
+            if (origin.x < -5 || origin.x > 5 || origin.y < -5 || origin.y > 5) {
+                i--;
+                continue;
+            } 
+
+            let maxDistance = Math.floor(Math.random() * landscapeMaxDistance + landscapePointCount / 2000);
             let ridgeLength = Math.floor(Math.random() * landscapeRidgeLength) + 2;
 
             let originHeight = 0.5 + (Math.random() * landscapeMaxHeight - 0.5);
@@ -258,23 +291,23 @@
                 troughInversion = -1;
             }
 
-            let q = [];
-            q.push(origin)
+            let seen = new Set();
+            seen.add(origin);
+            let q = [origin];
             let distances = {};
             distances[origin.id] = 0;
 
-            // Add unique nodes to the ridgeline
+            // Build the ridgeline from unique nodes
             let node = [...origin.neighbors][Math.floor(Math.random() * origin.neighbors.size)];
-            let seen = new Set();
             for (let j = 0; j < ridgeLength; j++ ) {
                 q.push(node);
 
                 distances[node.id] = 0;
-                seen.add(node);
+                seen.add(node.id);
 
                 let options = [];
                 for (let neighbor of node.neighbors) {
-                    if (seen.has(neighbor)) {
+                    if (seen.has(neighbor.id)) {
                         continue;
                     }
 
@@ -285,7 +318,40 @@
                     break;
                 }
 
-                node = options[Math.floor(Math.random() * options.length)];
+                //landscapeRidgeAngleMax = false;
+                if (landscapeRidgeAngleMax && q.length > 2) {
+                    // Determine the option with the maximum angle relative to the incoming node
+                    let priorNode = q[q.length - 2];
+
+                    let aLen = Math.sqrt((node.x - priorNode.x) ** 2 + (node.y - priorNode.y) ** 2);
+                    let angle, bestAngle = 0, bestNode;
+                    let bLen, cLen;
+                    for (let optionNode of options) {
+                        bLen = Math.sqrt((node.x - optionNode.x) ** 2 + (node.y - optionNode.y) ** 2);
+                        cLen = Math.sqrt((priorNode.x - optionNode.x) ** 2 + (priorNode.y - optionNode.y) ** 2);
+
+                        // Cosine rule
+                        angle = Math.acos((aLen ** 2 + bLen ** 2 - cLen ** 2) / (2 * aLen * bLen));
+
+                        if (angle > bestAngle) {
+                            bestAngle = angle;
+                            bestNode = optionNode;
+                        } 
+
+                        // Quick exit if we've found a "big enough" angle
+                        // this leads to clockwise spirals, I believe due to neighbor order
+                        /*
+                        if (angle > (Math.PI / 1.75)) {
+                            break;
+                        }
+                        */
+                    }
+
+                    node = bestNode;
+                } else {
+                    // Pick a random node we haven't seen to add to the ridgeline
+                    node = options[Math.floor(Math.random() * options.length)];
+                } 
 
                 // Could also look at the angle between the node we come from, this node, and the neighbors,
                 //to find the arm with the greatest angle
@@ -304,8 +370,8 @@
                 let newHeight = calculateHeight(troughInversion, originHeight, maxDistance, distance);
 
                 blend = Math.random() < landscapeBlend;
-                if (!blend || newHeight > node.height) {
-                    node.height = newHeight;
+                if (!blend || newHeight > node.height || node.height == 0) {
+                    node.height = newHeight; // * (1.0 - Math.random() * 0.05);
                 }
 
                 for (let neighbor of node.neighbors) {
@@ -319,84 +385,59 @@
             }
         }
 
+        // Create a new material to represent our rainfall
+        if (landscapeRainfall) {
+            const rainfallMaterial = new THREE.LineBasicMaterial( { color: 0x0099ff } );
+
+            // Other landscape processing
+            let rainfallRecieved = calculateRainfall(nodes);
+            let maxRainfallRecieved = 0.0;
+            for (const [k, v] of Object.entries(rainfallRecieved)) {
+                let node = nodes[k];
+
+                maxRainfallRecieved = Math.max(maxRainfallRecieved, v);
+            
+                const rainfallPoints = [];
+                rainfallPoints.push(new THREE.Vector3(node.x, 1, node.y));
+                rainfallPoints.push(new THREE.Vector3(node.x, 1 + (v / 25), node.y));
+
+                const rainfallGeometry = new THREE.BufferGeometry().setFromPoints( rainfallPoints );
+                const line = new THREE.Line( rainfallGeometry, rainfallMaterial );
+
+                //scene.add(line);
+            }
+
+            // Adjust height based on the rainfall recieved
+            console.log(maxRainfallRecieved);
+            for (let node of nodes) {
+                node.height = Math.max(0.0, node.height - (rainfallRecieved[node.id] / maxRainfallRecieved) * 1.0);
+            }
+        }
+
         const geometry = new THREE.BufferGeometry();
 
         const positions = [];
+        const indices = [];
         const normals = [];
         const colors = [];
 
-        const color = new THREE.Color();
+        // Create a vertex from index node so we can index them
+        for (let i  = 0; i < nodes.length; i++) {
+            let node = nodes[i];
 
-        const pA = new THREE.Vector3();
-        const pB = new THREE.Vector3();
-        const pC = new THREE.Vector3();
-
-        const cb = new THREE.Vector3();
-        const ab = new THREE.Vector3();
+            positions.push(node.x, node.height, node.y);
+            colors.push(...node.color(landscapeMaxHeight));
+        }
 
         for ( let i = 0; i < delaunay.triangles.length; i += 3 ) {
+            let currentNodes = [];
+            let nodeIdx;
 
-            let coordsIdx;
-
-            // positions
-            coordsIdx = delaunay.triangles[i] * 2;
-            let nodeA = nodes[coordsIdx / 2];
-
-            positions.push( nodeA.x, nodeA.height, nodeA.y );
-            pA.set( nodeA.x, nodeA.height, nodeA.y );
-
-            coordsIdx = delaunay.triangles[i + 1] * 2;
-            let nodeB = nodes[coordsIdx / 2];
-
-            positions.push( nodeB.x, nodeB.height, nodeB.y );
-            pB.set( nodeB.x, nodeB.height, nodeB.y );
-
-            coordsIdx = delaunay.triangles[i + 2] * 2;
-            let nodeC = nodes[coordsIdx / 2];
-
-            positions.push( nodeC.x, nodeC.height, nodeC.y );
-            pC.set( nodeC.x, nodeC.height, nodeC.y );
-
-            // flat face normals
-
-            cb.subVectors( pC, pB );
-            ab.subVectors( pA, pB );
-            cb.cross( ab );
-
-            cb.normalize();
-
-            const nx = cb.x;
-            const ny = cb.y;
-            const nz = cb.z;
-
-            normals.push( nx, ny, nz );
-            normals.push( nx, ny, nz );
-            normals.push( nx, ny, nz );
-
-            // colors
-
-            for (let node of [nodeA, nodeB, nodeC]) {
-                let vx, vy, vz;
-
-                if ( 0 < node.height && node.height < 0.15 ) {
-                    vx = 0.1 + Math.random() * 0.1;
-                    vy = 0.6 + Math.random() * 0.3;
-                    vz = 0.1 + Math.random() * 0.2;
-                } else if (node.height < 0.05) {
-                    vx = 0.2;
-                    vy = 0.2;
-                    vz = 0.8;
-                } else {
-                    vx = 0.0 + node.height / landscapeMaxHeight;
-                    vy = 0.0 + node.height / landscapeMaxHeight;
-                    vz = 0.0 + node.height / landscapeMaxHeight;
-                }
-
-                color.setRGB( vx, vy, vz );
-
-                const alpha = 0.9; //Math.random();
-
-                colors.push( color.r, color.g, color.b, alpha );
+            // Positions
+            for (let j = 0; j < 3; j++) {
+                nodeIdx = (delaunay.triangles[i + j] * 2) / 2;
+                indices.push(nodeIdx);
+                currentNodes.push(nodes[nodeIdx]);
             }
         }
 
@@ -404,16 +445,23 @@
             this.array = null;
         }
 
+        geometry.setIndex(indices);
         geometry.setAttribute( 'position', new THREE.Float32BufferAttribute( positions, 3 ).onUpload( disposeArray ) );
-        geometry.setAttribute( 'normal', new THREE.Float32BufferAttribute( normals, 3 ).onUpload( disposeArray ) );
+        //geometry.setAttribute( 'normal', new THREE.Float32BufferAttribute( normals, 3 ).onUpload( disposeArray ) );
         geometry.setAttribute( 'color', new THREE.Float32BufferAttribute( colors, 4 ).onUpload( disposeArray ) );
 
         geometry.computeBoundingSphere();
 
-        const material = new THREE.MeshPhongMaterial( {
-            color: 0xaaaaaa, specular: 0xffffff, shininess: 250,
-            side: THREE.DoubleSide, vertexColors: true, transparent: true
-        } );
+        const material = new THREE.MeshLambertMaterial( {
+            color: 0xaaaaaa,
+            side: THREE.DoubleSide,
+            vertexColors: true,
+            transparent: true,
+            wireframe: false,
+        });
+
+        //material.shading = THREE.SmoothShading;
+        geometry.computeVertexNormals(true);
 
         return new THREE.Mesh( geometry, material );
     }
@@ -439,7 +487,7 @@
 
     // Progress goes from 0 to 1 
     function render(progress) {
-        landscapeMesh.rotation.y = progress * Math.PI * 2;
+        //landscapeMesh.rotation.y = progress * Math.PI * 2;
         renderer.render( scene, camera );
     }
 </script>
