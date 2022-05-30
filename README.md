@@ -2,4 +2,6 @@
 
 ![sample terrain](sample_terrain.gif)
 
-A collection of experiments around terrain and world generation. You can play with the demo [here](https://gerhalt.github.io/topograft).
+[Play with the demo here!](https://gerhalt.github.io/topograft).
+
+Inspirational 3-dimensional world generation and visualization with tunable parameters as a three dimensional map rendered with pure Javascript in the browser.
