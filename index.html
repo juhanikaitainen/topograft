@@ -32,7 +32,7 @@
     </div>
     <div id="controls">
         Point Count
-        <input id="pointcount" type="range" min="500" max="250000" value="100000">
+        <input id="pointcount" type="range" min="500" max="250000" value="25000">
         <h5>Ridges</h5>
         Max Ridge Length
         <input id="ridgelen" type="range" min="1" max="500" value="50">
@@ -42,8 +42,6 @@
         <input id="peaks" type="range" min="1" max="1000" value="50">
         Max Height
         <input id="maxheight" type="range" min="1" max="50" value="10">
-        Blend
-        <input id="blend" type="range" min="1" max="10" value="10">
         <br>
         <div>
             <label>
@@ -53,7 +51,11 @@
             <br />
             <label>
                 <input id="rainfall" name="rainfall" type="checkbox">
-                <span>Rainfall</span>
+                <span>Rainfall (experimental)</span>
+            </label>
+            <label>
+                <input id="rotate" name="rotate" type="checkbox" checked>
+                <span>Rotate</span>
             </label>
         </div>
         <br />
@@ -81,7 +83,7 @@
     let landscapeRidgeAngleMax = true;
     let landscapePeaksCount; 
     let landscapeMaxHeight; 
-    let landscapeBlend;
+    let landscapeRotate;
     let landscapeSmooth;
     let landscapeRainfall;
 
@@ -152,7 +154,7 @@
         landscapeMaxDistance = document.querySelector("#maxdistance").value;
         landscapePeaksCount = document.querySelector("#peaks").value;
         landscapeMaxHeight = document.querySelector("#maxheight").value / 10; // Sliders don't seem to work with floats?
-        landscapeBlend = document.querySelector("#blend").value / 10;
+        landscapeRotate = document.querySelector("#rotate").checked; 
         landscapeSmooth = document.querySelector("#smooth").checked; 
         landscapeRainfall = document.querySelector("#rainfall").checked; 
 
@@ -209,8 +211,10 @@
         scene.add( light2 );
         */
 
+        /*
         const gridHelper = new THREE.GridHelper( 100, 100, 0x990000, 0x444444 );
         scene.add( gridHelper );
+        */
 
         canvas = document.getElementById('canvas');
         renderer = new THREE.WebGLRenderer({canvas: canvas});
@@ -381,8 +385,6 @@
                 //to find the arm with the greatest angle
             }
 
-            let blend = Math.random() < landscapeBlend;
-
             while (q.length > 0) {
                 let node = q.shift();
                 let distance = distances[node.id];
@@ -390,8 +392,7 @@
                 let newHeight = calculateHeight(troughInversion, originHeight, node['height'], maxDistance, distance);
                 node.height = newHeight;
 
-                blend = Math.random() < landscapeBlend;
-                if (!blend || newHeight > node.height || node.height == 0) {
+                if (newHeight > node.height || node.height == 0) {
                     node.height = newHeight; // * (1.0 - Math.random() * 0.05);
                 }
 
@@ -516,7 +517,10 @@
 
     // Progress goes from 0 to 1 
     function render(progress) {
-        //landscapeMesh.rotation.y = progress * Math.PI * 2;
+        if (landscapeRotate) {
+            landscapeMesh.rotation.y = progress * Math.PI * 2;
+        }
+
         renderer.render( scene, camera );
     }
 </script>
