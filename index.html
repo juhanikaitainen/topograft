@@ -32,7 +32,7 @@
     </div>
     <div id="controls">
         Point Count
-        <input id="pointcount" type="range" min="500" max="250000" value="15000">
+        <input id="pointcount" type="range" min="500" max="250000" value="100000">
         <h5>Ridges</h5>
         Max Ridge Length
         <input id="ridgelen" type="range" min="1" max="500" value="50">
@@ -47,7 +47,7 @@
         <br>
         <div>
             <label>
-                <input id="smooth" name="smooth" type="checkbox" checked>
+                <input id="smooth" name="smooth" type="checkbox">
                 <span>Smooth</span>
             </label>
             <br />
@@ -188,11 +188,11 @@
         //scene.fog = new THREE.Fog( 0x050505, 2000, 3500 );
 
         // Lighting
-        scene.add( new THREE.AmbientLight( 0x444444 ) );
+        //scene.add( new THREE.AmbientLight( 0x444444 ) );
 
         let position = [0, 50, -100];
 
-        const light1 = new THREE.DirectionalLight( 0xFDFBD3, 1.0);
+        const light1 = new THREE.DirectionalLight( 0xFDFBD3, 0.7 );
         //light1.castShadow = true;
         light1.position.set(...position);
         scene.add( light1 );
@@ -208,6 +208,9 @@
         light2.position.set( 0, - 1, 0 );
         scene.add( light2 );
         */
+
+        const gridHelper = new THREE.GridHelper( 100, 100, 0x990000, 0x444444 );
+        scene.add( gridHelper );
 
         canvas = document.getElementById('canvas');
         renderer = new THREE.WebGLRenderer({canvas: canvas});
@@ -229,8 +232,8 @@
         
         // Create points on a 20x20 grid
         for (let i = 0; i < landscapePointCount; i++) {
-            var x = Math.random() * 20 - 10;
-            var y = Math.random() * 20 - 10; 
+            var x = Math.random() * 10 - 5;
+            var y = Math.random() * 10 - 5; 
 
             coords.push(x, y);
 
@@ -265,29 +268,50 @@
 
         // Height functions
         // Ideally these are plug-and-playable.
-        function calculateHeight(troughInversion, originHeight, maxDistance, distance) {
-            return (troughInversion - troughInversion * distance / maxDistance) * originHeight * (0.9 + Math.random() * 0.1);
+        function calculateHeight(troughInversion, originHeight, formerHeight, maxDistance, distance) {
+            let newHeight = (troughInversion - troughInversion * distance / maxDistance) * originHeight; //* (0.9 + Math.random() * 0.1);
+
+            let blendDistance = maxDistance;
+            if (distance > maxDistance - blendDistance && formerHeight !== undefined) {
+                // Blend current height in 
+                let newBlend = maxDistance - distance;
+                let formerBlend = blendDistance - newBlend;
+                
+                newHeight = (newBlend * newHeight + formerBlend * formerHeight) / blendDistance;
+            }
+
+            return newHeight;
         }
 
         for ( let i = 0; i < landscapePeaksCount; i++ ) {
             let origin = nodes[Math.floor(Math.random() * nodes.length)];
 
-            if (origin.x < -5 || origin.x > 5 || origin.y < -5 || origin.y > 5) {
+            let limit = 2.5;
+            if (origin.x < -limit || origin.x > limit || origin.y < -limit || origin.y > limit) {
                 i--;
                 continue;
             } 
 
-            let maxDistance = Math.floor(Math.random() * landscapeMaxDistance + landscapePointCount / 2000);
+            let minDistance = landscapePointCount / 10000;
+            let maxDistance = Math.floor(Math.random() * landscapeMaxDistance + minDistance);
             let ridgeLength = Math.floor(Math.random() * landscapeRidgeLength) + 2;
 
             let originHeight = 0.5 + (Math.random() * landscapeMaxHeight - 0.5);
-            if (Math.random() > 0.7) {
+
+            /* Instead of starting at a random height > 0.5, 
+             * 10% - start at 0.1 (plains)
+             * 20% - start at the origin height
+             */
+            let chance = Math.random();
+            if (chance > 0.8) {
                 originHeight = 0.1;
+            } else if (chance > 0.6) {
+                originHeight = origin.height;
             }
 
             // -1 if we want to invert the ridge (for example, sea troughs)
             let troughInversion = 1;
-            if (Math.random() > 1.0) {
+            if (Math.random() > 0.9) {
                 troughInversion = -1;
             }
 
@@ -363,16 +387,21 @@
                 let node = q.shift();
                 let distance = distances[node.id];
 
-                if (distance > maxDistance) {
-                    continue;
-                }
-
-                let newHeight = calculateHeight(troughInversion, originHeight, maxDistance, distance);
+                let newHeight = calculateHeight(troughInversion, originHeight, node['height'], maxDistance, distance);
+                node.height = newHeight;
 
                 blend = Math.random() < landscapeBlend;
                 if (!blend || newHeight > node.height || node.height == 0) {
                     node.height = newHeight; // * (1.0 - Math.random() * 0.05);
                 }
+
+                // If in blend range, blend edges
+                if (distance == maxDistance) {
+                    node.edge = true;
+                    continue;
+                }
+
+                node.edge = false; 
 
                 for (let neighbor of node.neighbors) {
                     if (neighbor.id in distances) {
@@ -422,7 +451,7 @@
         const colors = [];
 
         // Create a vertex from index node so we can index them
-        for (let i  = 0; i < nodes.length; i++) {
+        for (let i = 0; i < nodes.length; i++) {
             let node = nodes[i];
 
             positions.push(node.x, node.height, node.y);
@@ -452,7 +481,7 @@
 
         geometry.computeBoundingSphere();
 
-        const material = new THREE.MeshLambertMaterial( {
+        const material = new THREE.MeshToonMaterial( {
             color: 0xaaaaaa,
             side: THREE.DoubleSide,
             vertexColors: true,

@@ -1,7 +1,7 @@
 
 export class Node {
 
-    constructor(id, x, y, height = 0.0) {
+    constructor(id, x, y, height = -0.5) {
         this.id = id;
         this.x = x;
         this.y = y;
@@ -9,6 +9,8 @@ export class Node {
 
         this.totalElevationDrop = 0.0;
         this.neighbors = new Set()  
+
+        this.edge = false;
     }
 
     /* Returns the node's color, with alpha
@@ -17,10 +19,14 @@ export class Node {
         let r, g, b;
         let a = 1.0; //Math.random();
 
-        if ( 0 < this.height && this.height < 0.15 ) {
-            r = 0.1 + Math.random() * 0.1;
-            g = 0.6 + Math.random() * 0.3;
-            b = 0.1 + Math.random() * 0.2;
+        if ( false && this.edge ) {
+            r = 1.0;
+            g = 0.0;
+            b = 0.0;
+        } else if ( 0 < this.height && this.height < 0.15 ) {
+            r = 0.1; // + Math.random() * 0.1;
+            g = 0.6; // + Math.random() * 0.3;
+            b = 0.1; // + Math.random() * 0.2;
         } else if (this.height < 0.05) {
             r = 0.2;
             g = 0.2;
